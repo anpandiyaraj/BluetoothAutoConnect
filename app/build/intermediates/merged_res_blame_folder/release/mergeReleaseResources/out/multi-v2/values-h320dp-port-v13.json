@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.anpan.bluetoothauto.app-mergeReleaseResources-28:/values-h320dp-port-v13/values-h320dp-port-v13.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\Pandiyaraj\\.gradle\\caches\\9.1.0\\transforms\\3aad8cfea32ecab51577650e79aa6906\\workspace\\transformed\\material-1.11.0\\res\\values-h320dp-port-v13\\values-h320dp-port-v13.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "63",
+                        "endOffsets": "114"
+                    }
+                }
+            ]
+        }
+    ]
+}

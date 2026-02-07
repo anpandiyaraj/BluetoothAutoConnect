@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "C:\\Users\\Pandiyaraj\\.gradle\\daemon\\9.1.0\\com.anpan.bluetoothauto.app-release-30:\\xml_data_extraction_rules.xml.flat",
+        "source": "C:\\Users\\Pandiyaraj\\.gradle\\daemon\\9.1.0\\com.anpan.bluetoothauto.app-main-31:\\xml\\data_extraction_rules.xml"
+    },
+    {
+        "merged": "com.anpan.bluetoothauto.app-release-30:/drawable_ic_bluetooth_round.xml.flat",
+        "source": "com.anpan.bluetoothauto.app-main-31:/drawable/ic_bluetooth_round.xml"
+    },
+    {
+        "merged": "C:\\Users\\Pandiyaraj\\.gradle\\daemon\\9.1.0\\com.anpan.bluetoothauto.app-release-30:\\xml_backup_rules.xml.flat",
+        "source": "C:\\Users\\Pandiyaraj\\.gradle\\daemon\\9.1.0\\com.anpan.bluetoothauto.app-main-31:\\xml\\backup_rules.xml"
+    },
+    {
+        "merged": "com.anpan.bluetoothauto.app-release-30:/drawable_ic_bluetooth.xml.flat",
+        "source": "com.anpan.bluetoothauto.app-main-31:/drawable/ic_bluetooth.xml"
+    }
+]

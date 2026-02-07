@@ -1,0 +1,19 @@
+com.anpan.bluetoothauto
+drawable ic_bluetooth
+drawable ic_bluetooth_round
+string app_name
+string attempting_to_connect
+string connected_to
+string failed_to_connect
+string permission_notification_channel_name
+string permission_notification_content
+string permission_notification_title
+string permission_rationale
+string service_idle
+string service_notification_channel_name
+string service_notification_content
+string service_notification_title
+string stop
+style Theme_BluetoothAutoConnect
+xml backup_rules
+xml data_extraction_rules

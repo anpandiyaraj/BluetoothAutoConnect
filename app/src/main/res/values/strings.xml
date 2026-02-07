@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">BluetoothAutoConnect</string>
+    <string name="permission_rationale">This app needs Bluetooth permissions to detect paired devices and connect to them automatically.</string>
+    <string name="service_notification_channel_name">Bluetooth Service</string>
+    <string name="service_notification_title">Bluetooth Auto-Connect</string>
+    <string name="service_notification_content">Scanning for nearby devices...</string>
+
+    <string name="permission_notification_channel_name">Permission Requests</string>
+    <string name="permission_notification_title">Permission Required</string>
+    <string name="permission_notification_content">Tap to grant necessary Bluetooth permissions.</string>
+    <string name="attempting_to_connect">Attempting to connect to %1$s</string>
+    <string name="connected_to">Connected to %1$s</string>
+    <string name="failed_to_connect">Failed to connect to %1$s</string>
+    <string name="stop">Stop</string>
+    <string name="service_idle">Waiting for device...</string>
+</resources>
