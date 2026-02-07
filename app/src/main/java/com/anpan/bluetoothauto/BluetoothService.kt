@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothA2dp
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothClass
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
@@ -36,10 +37,10 @@ class BluetoothService : Service() {
 
     private val CHANNEL_ID = "BluetoothServiceChannel"
     private val TAG = "BluetoothService"
-    private val ACTION_STOP_SERVICE = "com.anpan.bluetoothauto.STOP_SERVICE"
     private val NOTIFICATION_ID = 1
 
     private var bluetoothA2dp: BluetoothA2dp? = null
+    private var bluetoothHfp: BluetoothHeadset? = null
     private var connectionAttemptThread: Thread? = null
     @Volatile private var connectedDevice: BluetoothDevice? = null
 
@@ -50,26 +51,39 @@ class BluetoothService : Service() {
 
     private val profileListener = object : BluetoothProfile.ServiceListener {
         override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-            if (profile == BluetoothProfile.A2DP) {
-                Log.d(TAG, "A2DP Profile Proxy connected")
-                bluetoothA2dp = proxy as BluetoothA2dp
-                startConnectionAttempt()
+            when (profile) {
+                BluetoothProfile.A2DP -> {
+                    Log.d(TAG, "A2DP Profile Proxy connected")
+                    bluetoothA2dp = proxy as BluetoothA2dp
+                    startConnectionAttempt()
+                }
+                BluetoothProfile.HEADSET -> {
+                    Log.d(TAG, "HFP Profile Proxy connected")
+                    bluetoothHfp = proxy as BluetoothHeadset
+                    startConnectionAttempt()
+                }
             }
         }
 
         override fun onServiceDisconnected(profile: Int) {
-            if (profile == BluetoothProfile.A2DP) {
-                Log.d(TAG, "A2DP Profile Proxy disconnected")
-                bluetoothA2dp = null
+            when (profile) {
+                BluetoothProfile.A2DP -> {
+                    Log.d(TAG, "A2DP Profile Proxy disconnected")
+                    bluetoothA2dp = null
+                }
+                BluetoothProfile.HEADSET -> {
+                    Log.d(TAG, "HFP Profile Proxy disconnected")
+                    bluetoothHfp = null
+                }
             }
         }
     }
 
-    private val a2dpStateReceiver = object : BroadcastReceiver() {
+    private val connectionStateReceiver = object : BroadcastReceiver() {
         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         override fun onReceive(context: Context, intent: Intent) {
             val action = intent.action
-            if (action == BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED) {
+            if (action == BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED || action == BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED) {
                 synchronized(connectionLock) {
                     connectionLock.notifyAll()
                 }
@@ -96,8 +110,7 @@ class BluetoothService : Service() {
 
     private val bluetoothStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            val action = intent.action
-            if (action == BluetoothAdapter.ACTION_STATE_CHANGED) {
+            if (intent.action == BluetoothAdapter.ACTION_STATE_CHANGED) {
                 when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
                     BluetoothAdapter.STATE_OFF -> {
                         Log.d(TAG, "Bluetooth was turned OFF.")
@@ -123,16 +136,20 @@ class BluetoothService : Service() {
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val adapter = bluetoothManager.adapter
         adapter?.getProfileProxy(applicationContext, profileListener, BluetoothProfile.A2DP)
+        adapter?.getProfileProxy(applicationContext, profileListener, BluetoothProfile.HEADSET)
 
-        val a2dpFilter = IntentFilter(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+        val connectionFilter = IntentFilter().apply {
+            addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+            addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
+        }
         val btStateFilter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(a2dpStateReceiver, a2dpFilter, RECEIVER_NOT_EXPORTED)
+            registerReceiver(connectionStateReceiver, connectionFilter, RECEIVER_NOT_EXPORTED)
             registerReceiver(bluetoothStateReceiver, btStateFilter, RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("DEPRECATION")
-            registerReceiver(a2dpStateReceiver, a2dpFilter)
+            registerReceiver(connectionStateReceiver, connectionFilter)
             @Suppress("DEPRECATION")
             registerReceiver(bluetoothStateReceiver, btStateFilter)
         }
@@ -147,83 +164,92 @@ class BluetoothService : Service() {
     }
 
     private fun startConnectionAttempt() {
-        scanRunnable?.let { handler.removeCallbacks(it) } // Cancel any pending scans
-        if (connectionAttemptThread?.isAlive == true) {
-            return // Attempt already in progress
-        }
-        connectionAttemptThread = Thread {
-            attemptConnection()
-        }
+        scanRunnable?.let { handler.removeCallbacks(it) }
+        if (connectionAttemptThread?.isAlive == true) return
+        connectionAttemptThread = Thread { attemptConnection() }
         connectionAttemptThread?.start()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun getCandidateDevices(bondedDevices: Set<BluetoothDevice>): List<BluetoothDevice> {
+        if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return emptyList()
+
+        return bondedDevices.filter { device ->
+            val isA2dpConnected = bluetoothA2dp?.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
+            val isHfpConnected = bluetoothHfp?.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
+            if (isA2dpConnected || isHfpConnected) return@filter false
+
+            val deviceClass = device.bluetoothClass ?: return@filter false
+
+            when (deviceClass.majorDeviceClass) {
+                BluetoothClass.Device.Major.AUDIO_VIDEO -> {
+                    when (deviceClass.deviceClass) {
+                        BluetoothClass.Device.AUDIO_VIDEO_CAR_AUDIO,
+                        BluetoothClass.Device.AUDIO_VIDEO_WEARABLE_HEADSET,
+                        BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE,
+                        BluetoothClass.Device.AUDIO_VIDEO_UNCATEGORIZED -> true
+                        else -> false
+                    }
+                }
+                else -> false
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
     private fun attemptConnection() {
         if (connectedDevice != null) {
-            Log.d(TAG, "Service already managing a connection. No new attempt needed.")
+            Log.d(TAG, "Service already managing a connection.")
             return
         }
-
         if (retryCount >= 3) {
-            Log.d(TAG, "Reached max connection attempts. Halting until Bluetooth is toggled.")
-            updateNotification(getString(R.string.service_idle))
-            return // Stop trying
-        }
-
-        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val adapter = bluetoothManager.adapter
-
-        if (adapter == null || !adapter.isEnabled) {
-            Log.d(TAG, "Bluetooth not enabled. Waiting for it to be turned on.")
+            Log.d(TAG, "Reached max connection attempts.")
             updateNotification(getString(R.string.service_idle))
             return
         }
 
+        val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+        if (adapter == null || !adapter.isEnabled) {
+            Log.d(TAG, "Bluetooth not enabled.")
+            updateNotification(getString(R.string.service_idle))
+            return
+        }
         if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Missing BLUETOOTH_CONNECT permission. Stopping service.")
             stopSelf()
             return
         }
-
-        if (bluetoothA2dp == null) {
-            Log.d(TAG, "A2DP proxy not ready yet. Scheduling retry.")
+        if (bluetoothA2dp == null && bluetoothHfp == null) {
+            Log.d(TAG, "Bluetooth proxies not ready.")
             retryCount++
             scheduleRetry()
             return
         }
 
-        val systemConnectedDevices = bluetoothA2dp?.connectedDevices
-        if (systemConnectedDevices?.isNotEmpty() == true) {
-            val alreadyConnectedDevice = systemConnectedDevices.first()
-            Log.d(TAG, "Device ${alreadyConnectedDevice.name} is already connected. Syncing service state.")
+        val systemA2dpConnected = bluetoothA2dp?.connectedDevices?.isNotEmpty() == true
+        val systemHfpConnected = bluetoothHfp?.connectedDevices?.isNotEmpty() == true
+        if (systemA2dpConnected || systemHfpConnected) {
+            val alreadyConnectedDevice = (bluetoothA2dp?.connectedDevices?.firstOrNull() ?: bluetoothHfp?.connectedDevices?.firstOrNull())!!
+            Log.d(TAG, "Device ${alreadyConnectedDevice.name} is already connected.")
             connectedDevice = alreadyConnectedDevice
             updateNotification(getString(R.string.connected_to, alreadyConnectedDevice.name))
-            retryCount = 0 // Reset counter
-            scanRunnable?.let { handler.removeCallbacks(it) } // Cancel retries
+            retryCount = 0
+            scanRunnable?.let { handler.removeCallbacks(it) }
             return
         }
 
-        val bondedDevices = adapter.bondedDevices
-        if (bondedDevices.isEmpty()) {
-            Log.d(TAG, "No paired devices found. Scheduling retry.")
+        val candidateDevices = getCandidateDevices(adapter.bondedDevices)
+        if (candidateDevices.isEmpty()) {
+            Log.d(TAG, "No unconnected target audio devices found.")
             retryCount++
             scheduleRetry()
             return
         }
 
-        Log.d(TAG, "Connection attempt #${retryCount + 1}. Iterating over ${bondedDevices.size} paired devices.")
+        Log.d(TAG, "Connection attempt #${retryCount + 1}. Found ${candidateDevices.size} potential devices.")
         updateNotification(getString(R.string.service_notification_content))
 
-        var isDeviceConnected = false
-        for (device in bondedDevices) {
-            if (tryConnect(device)) {
-                isDeviceConnected = true
-                break
-            }
-        }
-
-        if (!isDeviceConnected) {
-            Log.d(TAG, "Failed to connect to any paired devices. Scheduling retry.")
+        if (!candidateDevices.any { tryConnect(it) }) {
+            Log.d(TAG, "Failed to connect to any candidate devices.")
             retryCount++
             scheduleRetry()
         }
@@ -231,94 +257,73 @@ class BluetoothService : Service() {
 
     private fun scheduleRetry() {
         updateNotification(getString(R.string.service_idle))
-        scanRunnable = Runnable {
-            if (connectedDevice == null) {
-                startConnectionAttempt()
-            }
-        }
-        handler.postDelayed(scanRunnable!!, 30000) // 30 seconds
+        scanRunnable = Runnable { if (connectedDevice == null) startConnectionAttempt() }
+        handler.postDelayed(scanRunnable!!, 30000)
     }
 
     @SuppressLint("MissingPermission")
     private fun tryConnect(device: BluetoothDevice): Boolean {
-        if (bluetoothA2dp == null || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            return false
-        }
-        
-        if (connectedDevice != null) return true
-
-        if (bluetoothA2dp?.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED) {
-            Log.d(TAG, "Device ${device.name} is already connected. Syncing service state.")
-            connectedDevice = device
-            updateNotification(getString(R.string.connected_to, device.name))
-            retryCount = 0
-            scanRunnable?.let { handler.removeCallbacks(it) }
-            Handler(Looper.getMainLooper()).post { Toast.makeText(applicationContext, getString(R.string.connected_to, device.name), Toast.LENGTH_LONG).show() }
-            return true
-        }
+        if (connectedDevice != null) return false
 
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, getString(R.string.attempting_to_connect, device.name), Toast.LENGTH_SHORT).show()
         }
 
-        var isConnected = false
-        if (device.bluetoothClass.hasService(BluetoothClass.Service.AUDIO)) {
-            Log.d(TAG, "Device ${device.name} supports AUDIO service. Attempting connection.")
-            var connectionInitiated = false
-            try {
-                val connectMethod = bluetoothA2dp?.javaClass?.getMethod("connect", BluetoothDevice::class.java)
-                connectionInitiated = connectMethod?.invoke(bluetoothA2dp, device) as? Boolean ?: false
-
-                if (connectionInitiated) {
-                    Log.d(TAG, "connect() method returned true for ${device.name}. Waiting for connection state change.")
-                    synchronized(connectionLock) {
-                        connectionLock.wait(10000) // Wait for 10 seconds for connection
-                    }
-
-                    if (bluetoothA2dp?.getConnectedDevices()?.contains(device) == true) {
-                        isConnected = true
-                    }
-                } else {
-                    Log.w(TAG, "connect() method returned false for ${device.name}. Cannot initiate connection.")
-                }
-
-                if (isConnected) {
-                    Log.d(TAG, "Successfully connected to ${device.name}")
-                    connectedDevice = device
-                    updateNotification(getString(R.string.connected_to, device.name))
-                    Handler(Looper.getMainLooper()).post { Toast.makeText(applicationContext, getString(R.string.connected_to, device.name), Toast.LENGTH_LONG).show() }
-                    retryCount = 0 // Reset retry counter on successful connection
-                    scanRunnable?.let { handler.removeCallbacks(it) }
-                } else {
-                    Log.d(TAG, "Failed to connect to ${device.name} within the timeout.")
-                    // If connection was initiated but failed/timed out, explicitly disconnect to cancel any pending connection attempt.
-                    if (connectionInitiated) {
-                        try {
-                            val disconnectMethod = bluetoothA2dp?.javaClass?.getMethod("disconnect", BluetoothDevice::class.java)
-                            disconnectMethod?.invoke(bluetoothA2dp, device)
-                            Log.d(TAG, "Called disconnect on ${device.name} to cancel pending connection.")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error trying to cancel connection to ${device.name}", e)
-                        }
-                    }
-                }
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                Log.w(TAG, "Connection attempt interrupted for ${device.name}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Exception while trying to connect to ${device.name}", e)
-            }
-        } else {
-             Log.d(TAG, "Device ${device.name} does not support AUDIO service.")
+        // Try A2DP First
+        if (tryProfileConnect(device, bluetoothA2dp, "A2DP")) {
+            return true
         }
 
+        // If A2DP fails, try HFP
+        if (tryProfileConnect(device, bluetoothHfp, "HFP")) {
+            return true
+        }
+
+        return false
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun tryProfileConnect(device: BluetoothDevice, profileProxy: BluetoothProfile?, profileName: String): Boolean {
+        if (profileProxy == null) return false
+
+        var isConnected = false
+        var connectionInitiated = false
+        try {
+            Log.d(TAG, "Attempting to connect to ${device.name} via $profileName")
+            val connectMethod = profileProxy.javaClass.getMethod("connect", BluetoothDevice::class.java)
+            connectionInitiated = connectMethod.invoke(profileProxy, device) as? Boolean ?: false
+
+            if (connectionInitiated) {
+                synchronized(connectionLock) { connectionLock.wait(20000) }
+
+                val getConnectedDevices = profileProxy.javaClass.getMethod("getConnectedDevices")
+                val connectedList = getConnectedDevices.invoke(profileProxy) as? List<*>
+                isConnected = connectedList?.contains(device) == true
+            }
+
+            if (isConnected) {
+                Log.d(TAG, "Successfully connected to ${device.name} via $profileName")
+                connectedDevice = device
+                updateNotification(getString(R.string.connected_to, device.name))
+                Handler(Looper.getMainLooper()).post { Toast.makeText(applicationContext, getString(R.string.connected_to, device.name), Toast.LENGTH_LONG).show() }
+                retryCount = 0
+                scanRunnable?.let { handler.removeCallbacks(it) }
+            } else {
+                Log.d(TAG, "Failed to connect to ${device.name} via $profileName within timeout.")
+                if (connectionInitiated) {
+                    val disconnectMethod = profileProxy.javaClass.getMethod("disconnect", BluetoothDevice::class.java)
+                    disconnectMethod.invoke(profileProxy, device)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during $profileName connection to ${device.name}", e)
+        }
         return isConnected
     }
 
     private fun updateNotification(contentText: String) {
         val notification = createNotification(contentText)
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, notification)
+        (getSystemService(NotificationManager::class.java)).notify(NOTIFICATION_ID, notification)
     }
 
     private fun createNotification(contentText: String): Notification {
@@ -338,13 +343,8 @@ class BluetoothService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.service_notification_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT
-            )
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(serviceChannel)
+            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, getString(R.string.service_notification_channel_name), NotificationManager.IMPORTANCE_DEFAULT))
         }
     }
 
@@ -353,39 +353,18 @@ class BluetoothService : Service() {
         super.onDestroy()
         stopForeground(Service.STOP_FOREGROUND_REMOVE)
         scanRunnable?.let { handler.removeCallbacks(it) }
-        
         try {
-            unregisterReceiver(a2dpStateReceiver)
-        } catch (e: IllegalArgumentException) {
-            // In case it was already unregistered
-        }
-
-        try {
+            unregisterReceiver(connectionStateReceiver)
             unregisterReceiver(bluetoothStateReceiver)
-        } catch (e: IllegalArgumentException) {
-            // In case it was already unregistered
-        }
+        } catch (e: IllegalArgumentException) { }
 
-        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val adapter = bluetoothManager.adapter
+        val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
         adapter?.closeProfileProxy(BluetoothProfile.A2DP, bluetoothA2dp)
+        adapter?.closeProfileProxy(BluetoothProfile.HEADSET, bluetoothHfp)
 
-        if (connectedDevice != null && bluetoothA2dp != null) {
-            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
-                try {
-                    val disconnectMethod = bluetoothA2dp?.javaClass?.getMethod("disconnect", BluetoothDevice::class.java)
-                    disconnectMethod?.invoke(bluetoothA2dp, connectedDevice)
-                    Log.d(TAG, "Disconnected from ${connectedDevice?.name}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error while disconnecting", e)
-                }
-            }
-        }
         connectionAttemptThread?.interrupt()
         Log.d(TAG, "Service destroyed.")
     }
 
-    override fun onBind(intent: Intent): IBinder? {
-        return null
-    }
+    override fun onBind(intent: Intent): IBinder? = null
 }
