@@ -219,9 +219,11 @@ class BluetoothService : Service() {
     @SuppressLint("MissingPermission")
     private fun attemptConnection() {
         if (connectedDevice != null) {
-            val isA2dpConnected = bluetoothA2dp?.getConnectionState(connectedDevice) == BluetoothProfile.STATE_CONNECTED
-            val isHfpConnected = bluetoothHfp?.getConnectionState(connectedDevice) == BluetoothProfile.STATE_CONNECTED
-            if(isA2dpConnected && isHfpConnected) {
+            val isA2dpConnected =
+                bluetoothA2dp?.getConnectionState(connectedDevice) == BluetoothProfile.STATE_CONNECTED
+            val isHfpConnected =
+                bluetoothHfp?.getConnectionState(connectedDevice) == BluetoothProfile.STATE_CONNECTED
+            if (isA2dpConnected && isHfpConnected) {
                 Log.d(TAG, "Service already managing a fully connected device.")
                 return
             }
@@ -251,7 +253,8 @@ class BluetoothService : Service() {
 
         val a2dpConnectedDevices = bluetoothA2dp?.connectedDevices.orEmpty()
         val hfpConnectedDevices = bluetoothHfp?.connectedDevices.orEmpty()
-        val connectedDevices = (a2dpConnectedDevices + hfpConnectedDevices).distinctBy { it.address }
+        val connectedDevices =
+            (a2dpConnectedDevices + hfpConnectedDevices).distinctBy { it.address }
 
         if (connectedDevices.isNotEmpty()) {
             val device = connectedDevices.first()
@@ -308,7 +311,8 @@ class BluetoothService : Service() {
         }
 
         val hfpNeeded = bluetoothHfp?.getConnectionState(device) != BluetoothProfile.STATE_CONNECTED
-        val a2dpNeeded = bluetoothA2dp?.getConnectionState(device) != BluetoothProfile.STATE_CONNECTED
+        val a2dpNeeded =
+            bluetoothA2dp?.getConnectionState(device) != BluetoothProfile.STATE_CONNECTED
 
         var hfpConnected = !hfpNeeded
         var a2dpConnected = !a2dpNeeded
@@ -320,13 +324,17 @@ class BluetoothService : Service() {
         if (a2dpNeeded && bluetoothA2dp?.getConnectionState(device) != BluetoothProfile.STATE_CONNECTED) {
             a2dpConnected = tryProfileConnect(device, bluetoothA2dp, "A2DP")
         } else if (a2dpNeeded) {
-            a2dpConnected = bluetoothA2dp?.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
+            a2dpConnected =
+                bluetoothA2dp?.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
         }
 
         val isAnyConnected = hfpConnected || a2dpConnected
 
         if (isAnyConnected) {
-            Log.d(TAG, "Connection to ${device.name} finished. HFP: $hfpConnected, A2DP: $a2dpConnected")
+            Log.d(
+                TAG,
+                "Connection to ${device.name} finished. HFP: $hfpConnected, A2DP: $a2dpConnected"
+            )
             connectedDevice = device
             updateNotification(getString(R.string.connected_to, device.name))
             Handler(Looper.getMainLooper()).post {
@@ -361,7 +369,8 @@ class BluetoothService : Service() {
 
             if (connectionInitiated) {
                 synchronized(connectionLock) { connectionLock.wait(20000) }
-                isConnected = profileProxy.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
+                isConnected =
+                    profileProxy.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
             }
 
             if (isConnected) {
@@ -371,10 +380,17 @@ class BluetoothService : Service() {
                 if (connectionInitiated && profileProxy.getConnectionState(device) != BluetoothProfile.STATE_CONNECTED) {
                     try {
                         val disconnectMethod =
-                            profileProxy.javaClass.getMethod("disconnect", BluetoothDevice::class.java)
+                            profileProxy.javaClass.getMethod(
+                                "disconnect",
+                                BluetoothDevice::class.java
+                            )
                         disconnectMethod.invoke(profileProxy, device)
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to gracefully disconnect after failed connection attempt.", e)
+                        Log.w(
+                            TAG,
+                            "Failed to gracefully disconnect after failed connection attempt.",
+                            e
+                        )
                     }
                 }
             }

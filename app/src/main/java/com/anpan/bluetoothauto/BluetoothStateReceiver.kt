@@ -21,18 +21,26 @@ class BluetoothStateReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
-        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        val bluetoothManager =
+            context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
 
         when (action) {
             Intent.ACTION_BOOT_COMPLETED -> {
                 if (bluetoothAdapter?.isEnabled == true && hasRequiredPermissions(context)) {
-                    Log.d("BluetoothStateReceiver", "Device booted and Bluetooth is ON. Starting service.")
+                    Log.d(
+                        "BluetoothStateReceiver",
+                        "Device booted and Bluetooth is ON. Starting service."
+                    )
                     startService(context)
                 } else {
-                    Log.d("BluetoothStateReceiver", "Device booted, but Bluetooth is OFF or permissions are missing.")
+                    Log.d(
+                        "BluetoothStateReceiver",
+                        "Device booted, but Bluetooth is OFF or permissions are missing."
+                    )
                 }
             }
+
             BluetoothAdapter.ACTION_STATE_CHANGED -> {
                 val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
                 when (state) {
@@ -41,10 +49,14 @@ class BluetoothStateReceiver : BroadcastReceiver() {
                         if (hasRequiredPermissions(context)) {
                             startService(context)
                         } else {
-                            Log.d("BluetoothStateReceiver", "Permissions missing, showing notification.")
+                            Log.d(
+                                "BluetoothStateReceiver",
+                                "Permissions missing, showing notification."
+                            )
                             showPermissionNotification(context)
                         }
                     }
+
                     BluetoothAdapter.STATE_OFF -> {
                         Log.d("BluetoothStateReceiver", "Bluetooth turned OFF")
                     }
@@ -67,7 +79,10 @@ class BluetoothStateReceiver : BroadcastReceiver() {
         }
 
         return (bluetoothPermissions + notificationPermission).all { permission ->
-            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                context,
+                permission
+            ) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -77,7 +92,8 @@ class BluetoothStateReceiver : BroadcastReceiver() {
     }
 
     private fun showPermissionNotification(context: Context) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -96,8 +112,8 @@ class BluetoothStateReceiver : BroadcastReceiver() {
 
         val pendingIntent = PendingIntent.getActivity(
             context,
-            0, 
-            mainActivityIntent, 
+            0,
+            mainActivityIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -110,6 +126,9 @@ class BluetoothStateReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .build()
 
-        notificationManager.notify(2, notification) // Use a different ID than the service notification
+        notificationManager.notify(
+            2,
+            notification
+        ) // Use a different ID than the service notification
     }
 }
